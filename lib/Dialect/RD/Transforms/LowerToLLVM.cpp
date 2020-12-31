@@ -97,16 +97,26 @@ class LowerToRuntimePass : public LowerToRuntimeBase<LowerToRuntimePass> {
           // Make init function.
           auto createName = (Twine(kCreatePrefix) + "foo_fix_me").str();
 
-          auto createFnTy = LLVM::LLVMType::getFunctionTy(stateTy, {}, /*isVarArg=*/false);
+          auto createFnTy = LLVM::LLVMType::getFunctionTy(LLVM::LLVMType::getVoidTy(context), {statePtrTy}, /*isVarArg=*/false);
           auto createFn = builder.create<LLVM::LLVMFuncOp>(
             op.getLoc(), createName, createFnTy, LLVM::Linkage::Internal);
           {
             Block *createBody = createFn.addEntryBlock();
             auto createBuilder = OpBuilder::atBlockBegin(createBody);
-            auto undefStruct = createBuilder.create<LLVM::UndefOp>(op.getLoc(), stateTy);
-            auto startInserted = createBuilder.create<LLVM::InsertValueOp>(op.getLoc(), undefStruct, walkOp->getOperand(0), builder.getI64ArrayAttr(0));
-            auto endInserted = createBuilder.create<LLVM::InsertValueOp>(op.getLoc(), startInserted, walkOp->getOperand(1), builder.getI64ArrayAttr(1));
-            createBuilder.create<LLVM::ReturnOp>(op.getLoc(), endInserted.getResult());
+            auto statePtr = createBody->getArgument(0);
+            auto zero = createBuilder.create<LLVM::ConstantOp>(op.getLoc(), int64Ty, builder.getIntegerAttr(builder.getIndexType(), 0));
+            auto one = createBuilder.create<LLVM::ConstantOp>(op.getLoc(), int64Ty, builder.getIntegerAttr(builder.getIndexType(), 1));
+            auto startPtr = createBuilder.create<LLVM::GEPOp>(op.getLoc(), statePtrTy, statePtr, ValueRange({zero, zero}));
+            auto endPtr = createBuilder.create<LLVM::GEPOp>(op.getLoc(), statePtrTy, statePtr, ValueRange({zero, one}));
+            auto startValueOp = createBuilder.clone(*walkOp->getOperand(0).getDefiningOp());
+            auto endValueOp = createBuilder.clone(*walkOp->getOperand(1).getDefiningOp());
+            createBuilder.create<LLVM::StoreOp>(op.getLoc(), startPtr, startValueOp->getResult(0));
+            createBuilder.create<LLVM::StoreOp>(op.getLoc(), endPtr, endValueOp->getResult(0));
+
+            // auto startInserted = createBuilder.create<LLVM::InsertValueOp>(op.getLoc(), undefStruct, walkOp->getOperand(0), builder.getI64ArrayAttr(0));
+            // auto endInserted = createBuilder.create<LLVM::InsertValueOp>(op.getLoc(), startInserted, walkOp->getOperand(1), builder.getI64ArrayAttr(1));
+            // createBuilder.create<LLVM::ReturnOp>(op.getLoc(), endInserted.getResult());
+            createBuilder.create<ReturnOp>(op.getLoc());
             llvm::outs() << "Made a create fn:\n" << createFn << "\n";
           }
 
@@ -135,11 +145,37 @@ class LowerToRuntimePass : public LowerToRuntimeBase<LowerToRuntimePass> {
             llvm::outs() << "Made a next function:\n" << nextFn << "\n";
           }
           // Replace ops!
-          walkOp->erase();
+          // walkOp->erase();
+          walkOp->remove();  // TODO: Erase?
           {
             OpBuilder::InsertionGuard guard(builder);
             builder.setInsertionPointAfter(op);
-            // auto itr = builder.create<CallOp>(op.getLoc(), createFn);
+            auto one = builder.create<LLVM::ConstantOp>(op.getLoc(), int64Ty, builder.getIntegerAttr(builder.getIndexType(), 1));
+            auto itr = builder.create<LLVM::AllocaOp>(op.getLoc(), statePtrTy, ValueRange({one}));
+            builder.create<LLVM::CallOp>(op.getLoc(), createFn, ValueRange({itr}));
+            op.result().replaceAllUsesWith(itr);
+            // op.erase();
+            op->remove();  // TODO: Erase later!
+            llvm::outs() << "Did some sugary! Things now look like:\n"
+                         << module << "\n";
+
+            for (auto i = itr.getResult().user_begin(); i != itr.getResult().user_end(); ++i) {
+              llvm::outs() << "Walking users.... found: " << i->getName() << "... ";
+              if (i->getName().getStringRef() == "rd.iterator_next") {
+                llvm::outs() << "MATCHING!\n";
+                OpBuilder::InsertionGuard guard(builder);
+                builder.setInsertionPointAfter(*i);
+                auto nextCallOp = builder.create<LLVM::CallOp>(op.getLoc(), nextFn, ValueRange({itr}));
+                auto isValid = builder.create<LLVM::ExtractValueOp>(op.getLoc(), nextReturnTy, nextCallOp.getResult(0), builder.getI32ArrayAttr(0));
+                auto nextValue = builder.create<LLVM::ExtractValueOp>(op.getLoc(), nextReturnTy, nextCallOp.getResult(0), builder.getI32ArrayAttr(1));
+                i->getResult(0).replaceAllUsesWith(isValid);
+                i->getResult(1).replaceAllUsesWith(nextValue);
+                i->remove();  // TODO: erase?
+              } else {
+                llvm::outs() << "didn't match.\n";
+              }
+            }
+            llvm::outs() << "Did some more sugary! Things now look like:\n" << module << "\n";
           }
 
           // walkOp->getResult(0).get
@@ -148,7 +184,6 @@ class LowerToRuntimePass : public LowerToRuntimeBase<LowerToRuntimePass> {
           llvm_unreachable("Unexpected dataset operation.");
         }
       }
-
     });
 
     LLVMTypeConverter converter(context);
