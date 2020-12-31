@@ -1,6 +1,7 @@
 add_npcomp_conversion_library(NPCOMPRDPasses
   Passes.cpp
   MergeFuncs.cpp
+  LowerToLLVM.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/include/npcomp/Dialect/RD/Transforms

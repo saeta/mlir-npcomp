@@ -16,4 +16,9 @@ def RDMergeFuncs : Pass<"rd-mergefuncs", "FuncOp"> {
   let constructor = "mlir::NPCOMP::createRDMergeFuncsPass()";
 }
 
+def LowerToRuntime : Pass<"rd-lower-to-llvm", "ModuleOp"> {
+  let summary = "Lower everything to LLVM";
+  let constructor = "mlir::NPCOMP::createRDLowerToLLVMPass();";
+}
+
 #endif // NPCOMP_RD_PASSES
