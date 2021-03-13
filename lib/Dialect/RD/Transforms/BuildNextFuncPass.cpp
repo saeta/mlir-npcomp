@@ -10,8 +10,6 @@
 
 #include "PassDetail.h"
 
-#include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/Builders.h"
@@ -32,10 +30,6 @@ namespace {
 
 // Clones the definition function, transforming the ops used to the `[...].next` variations of the ops.
 class BuildNextFunc : public RDBuildNextFuncBase<BuildNextFunc> {
-  void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<LLVM::LLVMDialect>();
-  }
-
   void runOnOperation() override {
     auto* context = &getContext();
     auto pipelineDefOp = getOperation();

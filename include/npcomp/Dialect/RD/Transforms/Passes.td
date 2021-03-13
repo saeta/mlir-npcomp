@@ -26,6 +26,11 @@ def RDBuildNextFunc : Pass<"rd-build-next-func", "::mlir::NPCOMP::rd::PipelineDe
   let constructor = "mlir::NPCOMP::createBuildNextFuncPass()";
 }
 
+def RDLowerNextFunc : Pass<"rd-lower-next-func", "::mlir::NPCOMP::rd::PipelineDefinitionOp"> {
+  let summary = "Lowers next funcs for a pipeline.";
+  let constructor = "mlir::NPCOMP::createLowerNextFuncPass()";
+}
+
 def RDMergeFuncs : Pass<"rd-mergefuncs", "FuncOp"> {
   let summary = "Merges functions in the rd dialect";
   let constructor = "mlir::NPCOMP::createRDMergeFuncsPass()";
